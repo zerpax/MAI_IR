@@ -1,0 +1,11 @@
+db:
+  collection: documents
+  name: MAI_search_corpus
+  url: mongodb://127.0.0.1:27017/?directConnection=true&serverSelectionTimeoutMS=2000&appName=mongosh+2.5.8
+logic:
+  delay: 5
+  max_depth: 2
+  parseable_pages:
+  - https://www.billboard.com/music/
+  start_id: 20
+  start_url: https://www.billboard.com/music/chart-beat/taylor-swift-showgirl-10-weeks-number-one-billboard-200-1236143930/
