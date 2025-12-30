@@ -7,10 +7,10 @@ logic:
   - https://www.billboard.com/c/music/
   - https://www.billboard.com/music/
   - https://pitchfork.com/news/
-  delay: 5
+  delay: 0
   max_depth: 30000
   parseable_pages:
   - https://www.billboard.com/music/
   - https://pitchfork.com/news/
-  start_id: 30051
-  start_url: https://pitchfork.com/news/?page=50
+  start_id: 31209
+  start_url: https://www.billboard.com/music/pop/niall-horan-one-direction-song-fools-gold-solo-tour-video-7949219/
