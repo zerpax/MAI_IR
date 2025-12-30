@@ -8,7 +8,6 @@ from index import BooleanIndex
 import stemmer
 
 
-# -------------------- DB SETUP (given) --------------------
 
 def db_setup(config):
     url = config['db']['url']
@@ -20,7 +19,6 @@ def db_setup(config):
     return collection
 
 
-# -------------------- QUERY PARSING --------------------
 
 def parse_query(q: str) -> list[str]:
     tokens = q.lower().strip().split()
@@ -44,8 +42,6 @@ def parse_query(q: str) -> list[str]:
     raise ValueError("Invalid query format")
 
 
-# -------------------- SNIPPET GENERATION --------------------
-
 def make_snippet(text: str, terms: list[str], size: int = 160) -> str:
     text = text.lower()
     for term in terms:
@@ -57,8 +53,6 @@ def make_snippet(text: str, terms: list[str], size: int = 160) -> str:
     return text[:size].replace("\n", " ")
 
 
-# -------------------- MAIN --------------------
-
 def main():
     if len(sys.argv) < 3:
         print("Usage: search.py <index_file> <query>")
@@ -67,18 +61,21 @@ def main():
     index_file = sys.argv[1]
     query = " ".join(sys.argv[2:])
 
-    # Load config
     with open("config.yaml", "r", encoding="utf-8") as file:
         config = yaml.safe_load(file)
 
-    # DB connection
-    collection = db_setup(config)
+    collection = None
+    try:
+        collection = db_setup(config)
+        collection.find_one()
+        mongo_available = True
+    except Exception as e:
+        print("MongoDB not available, falling back to IDs only.")
+        mongo_available = False
 
-    # Load index
     index = BooleanIndex()
     index.load(index_file)
 
-    print(query)
     try:
         tokens = parse_query(query)
     except ValueError as e:
@@ -91,33 +88,34 @@ def main():
         print("No documents found")
         return
 
-    # Fetch documents from DB
-    documents = list(
-        collection.find(
-            {"_id": {"$in": list(doc_ids)}},
-            {"html": 1, "url": 1, "source_name": 1, "date": 1}
-        )
-    )
-
-    # Build final results
     terms = [t for t in tokens if t not in ("AND", "OR", "NOT")]
+    
+    if mongo_available:
+        documents = list(
+            collection.find(
+                {"_id": {"$in": list(doc_ids)}},
+                {"html": 1, "url": 1, "source_name": 1, "date": 1}
+            )
+        )
 
-    results = []
-    for doc in documents:
-        results.append({
-            "id": str(doc["_id"]),
-            "url": doc.get("url"),
-            "source": doc.get("source_name"),
-        })
+        results = []
+        for doc in documents:
+            html_text = doc.get("html", "")
+            results.append({
+                "id": str(doc["_id"]),
+                "url": doc.get("url"),
+                "source": doc.get("source_name"),
+            })
 
-    # Output (CLI + machine-readable)
-    output = {
-        "query": query,
-        "total": len(results),
-        "results": results
-    }
+        output = {
+            "query": query,
+            "total": len(results),
+            "results": results
+        }
 
-    print(json.dumps(output, indent=2, ensure_ascii=False))
+        print(json.dumps(output, indent=2, ensure_ascii=False))
+    else:
+        print("Document IDs:", doc_ids)
 
 
 if __name__ == "__main__":
