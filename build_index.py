@@ -23,9 +23,38 @@ def db_setup(config):
     collection = database[collection_name]
     return collection
 
+def extract_text_pitchfork(soup) -> str:
+    title = ''
+    authors = ''
+    text = ''
+    try:
+        title = soup.find('h1').text.strip()
+    except:
+        pass
+
+    # print(title)
+
+    try:
+        for author in soup.find('main').find("span", itemprop="author").find_all('a'):
+            authors += " " + author.text
+
+    except:
+        pass
+
+    try:
+        for paragraph in soup.find("div", attrs={"data-attribute-verso-pattern": "article-body"}).find_all('p'):
+            text += paragraph.text.strip()
+    except:
+        pass
+    text = text.strip()
+    # print(text)
+    
+    combined = title + '\n' +  authors + '\n' + text
+
+    return combined
 
 
-def extract_text(soup) -> str:
+def extract_text_billboard(soup) -> str:
     title = ''
     authors = ''
     text = ''
@@ -40,7 +69,10 @@ def extract_text(soup) -> str:
         for author in soup.find('div', class_ = 'author').find('div', class_ = 'multiple-authors-wrapper').find_all('a'):
             authors += author
     except:
-        authors = soup.find('div', class_ = 'author').find('a').text.strip()
+        try:
+            authors = soup.find('div', class_ = 'author').find('a').text.strip()
+        except:
+            pass
     # print(authors)
 
     try:
@@ -62,32 +94,42 @@ def build_index(config, index):
 
     cursor = collection.find({}, {
         "_id": 1,
-        "html": 1
+        "html": 1,
+        "source_name":1
     })
 
     doc_count = 0
 
     for doc in cursor:
-        doc_id = doc["_id"]
+        doc_id = doc.get("_id", "")
         html = doc.get("html", "")
-
+        source = doc.get("source_name", "")
+        if doc_id % 100 == 0:
+            print("processing ",doc_id)
+            print(doc_count)
         if not html:
             continue
 
-        try:
-            soup = BeautifulSoup(html, "html.parser")
-            text = extract_text(soup)
-
-            tokens = tokenizer.tokenize(text)
-            stems = []
-            for token in tokens:
-                stems.append(stemmer.stem(token))
-            index.add_document(doc_id, stems)
-            doc_count += 1
-
-        except Exception as e:
-            print(f"Failed to parse document with id = {doc_id}, continuing")
+        # try:
+        soup = BeautifulSoup(html, "html.parser")
+        if "billboard" in source:
+            text = extract_text_billboard(soup)
+        elif "pitchfork" in source:
+            text = extract_text_pitchfork(soup)
+        else:
             continue
+
+        tokens = tokenizer.tokenize(text)
+        stems = []
+        for token in tokens:
+            stems.append(stemmer.stem(token))
+        index.add_document(doc_id, stems)
+        doc_count += 1
+
+        # except Exception as e:
+        #     print(e)
+        #     print(f"Failed to parse document with id = {doc_id}, continuing")
+        #     continue
 
 
             
@@ -110,6 +152,7 @@ def main():
 
     index = BooleanIndex()
     build_index(config, index)
+
     
     index.save(index_file)
     print(f"Saved index into {index_file}")
@@ -117,58 +160,5 @@ def main():
 if __name__ == '__main__':
     main()
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# def parse_file(filename):
-#     file = open(filename, 'r', encoding='utf-8')
-#     text = file.read()
-#     file.close()
-#     soup = BeautifulSoup(text, 'html.parser')
-#     return extract_text(soup)
-
-# def count_freq(tokens):
-#     freq = Counter(tokens)
-#     freq = freq.most_common()
-#     return freq
-
-# def plot_freq(tokens):
-#     freq = count_freq(tokens)
-    
-#     # Separate ranks and frequencies
-#     ranks = np.arange(1, len(freq) + 1)
-#     frequencies = np.array([f for _, f in freq])
-
-#     # Zipf prediction: f ~ 1/r (scaled by max frequency)
-#     zipf = frequencies[0] / ranks
-
-    
-#     plt.figure(figsize=(8,6))
-#     plt.loglog(ranks, frequencies, marker=".", linestyle="", label="Corpus")
-#     plt.loglog(ranks, zipf, linestyle="--", label="Zipf's law")
-#     plt.xlabel("Rank of term")
-#     plt.ylabel("Frequency")
-#     plt.title("Term frequency distribution with Zipf's law")
-#     plt.legend()
-#     plt.grid(True, which="both", ls="--")
-#     plt.show()
 
 

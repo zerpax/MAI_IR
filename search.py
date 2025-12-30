@@ -1,30 +1,63 @@
 import sys
-sys.path.append("build\Debug")
+import json
+import yaml
+from pymongo import MongoClient
+
+sys.path.append("build\\Debug")
 from index import BooleanIndex
-import stemmer 
+import stemmer
+
+
+# -------------------- DB SETUP (given) --------------------
+
+def db_setup(config):
+    url = config['db']['url']
+    db_name = config['db']['name']
+    collection_name = config['db']['collection']
+    client = MongoClient(url)
+    database = client[db_name]
+    collection = database[collection_name]
+    return collection
+
+
+# -------------------- QUERY PARSING --------------------
 
 def parse_query(q: str) -> list[str]:
     tokens = q.lower().strip().split()
-
+    print(tokens)
     if len(tokens) == 1:
-        tokens[0] = stemmer.stem(tokens[0])
-        return [tokens[0]]
+        return [stemmer.stem(tokens[0])]
 
     if len(tokens) == 2 and tokens[0].upper() == "not":
-        tokens[1] = stemmer.stem(tokens[1])
-        return ["not", tokens[1]]
+        return ["NOT", stemmer.stem(tokens[1])]
 
     if len(tokens) == 3:
         left, op, right = tokens
-        left = stemmer.stem(left)
-        right = stemmer.stem(right)
-        op = op.upper()
 
         if op in ("and", "or"):
-            return [left, op, right]
+            return [
+                stemmer.stem(left),
+                op,
+                stemmer.stem(right)
+            ]
 
     raise ValueError("Invalid query format")
 
+
+# -------------------- SNIPPET GENERATION --------------------
+
+def make_snippet(text: str, terms: list[str], size: int = 160) -> str:
+    text = text.lower()
+    for term in terms:
+        pos = text.find(term)
+        if pos != -1:
+            start = max(0, pos - 40)
+            end = pos + size
+            return text[start:end].replace("\n", " ")
+    return text[:size].replace("\n", " ")
+
+
+# -------------------- MAIN --------------------
 
 def main():
     if len(sys.argv) < 3:
@@ -34,24 +67,58 @@ def main():
     index_file = sys.argv[1]
     query = " ".join(sys.argv[2:])
 
+    # Load config
+    with open("config.yaml", "r", encoding="utf-8") as file:
+        config = yaml.safe_load(file)
+
+    # DB connection
+    collection = db_setup(config)
+
+    # Load index
     index = BooleanIndex()
     index.load(index_file)
 
+    print(query)
     try:
         tokens = parse_query(query)
     except ValueError as e:
         print(e)
         return
 
-    result = index.evaluate_query(tokens)
+    doc_ids = index.evaluate_query(tokens)
 
-    if not result:
+    if not doc_ids:
         print("No documents found")
         return
 
-    print("Document ids:")
-    for doc_id in result:
-        print(doc_id)
+    # Fetch documents from DB
+    documents = list(
+        collection.find(
+            {"_id": {"$in": list(doc_ids)}},
+            {"html": 1, "url": 1, "source_name": 1, "date": 1}
+        )
+    )
+
+    # Build final results
+    terms = [t for t in tokens if t not in ("AND", "OR", "NOT")]
+
+    results = []
+    for doc in documents:
+        results.append({
+            "id": str(doc["_id"]),
+            "url": doc.get("url"),
+            "source": doc.get("source_name"),
+        })
+
+    # Output (CLI + machine-readable)
+    output = {
+        "query": query,
+        "total": len(results),
+        "results": results
+    }
+
+    print(json.dumps(output, indent=2, ensure_ascii=False))
+
 
 if __name__ == "__main__":
     main()
